@@ -1,7 +1,5 @@
 #version 460 core
 
-// ray_buffer_size should be at least 2 ^ ray_depth to prevent overflow
-#define RAY_BUFFER_SIZE 8
 #define RAY_DEPTH 3
 #define SAMPLE 64
 #define EPSILON 1e-6f
@@ -33,14 +31,16 @@ struct ray
 
 uniform scene_sdf static_object[];
 uniform scene_sdf dynamic_object[];
-// use circular buffer to store rays for iterations and solve ray marching without recursions
-ray ray_buffer[RAY_BUFFER_SIZE];
+// use stack buffer to store rays for iterations and solve ray marching without recursions
+// max buffer size equals max reflection/refraction depth
+ray ray_buffer[RAY_DEPTH];
 
 struct result
 {
 	float signed_dist;
 	float emissive;
 	float reflective;
+	float refractive;
 };
 
 
@@ -135,14 +135,14 @@ result subtract_op(result a, result b)
 result scene(float x, float y)
 {
 	vec2 pos = vec2(x, y);
-	result a = { circle_sdf(pos, vec2(0.6, 0.5), 0.05), 2, 0f };
+	result a = { circle_sdf(pos, vec2(0.6, 0.5), 0.05), 2, 0f, 0 };
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
 	//result c = {rectangle_sdf(pos, vec2(1.2, 0.5), vec2(0.3, 0.3), rotation),0, 0.9f};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
-	result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.1f, rotation),0.0f,1f };
+	result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.1f, rotation),0.0f,1f, 0 };
 	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.1f, rotation),0.0f,1f };
 	vec2 v[3] = {vec2(0.7, 0.48), vec2(1.0, 0.3), vec2(0.8, 0.1)};
-	result d = { triangle_sdf(pos, v),0f, 0.9f };
+	result d = { triangle_sdf(pos, v),0f, 0.9f,0 };
 	//result d = { segment_sdf(pos, vec2(0.2, 0.2), vec2(0.4, 0.4)) - 0.1,2f };
 	return union_op(d,union_op(c,a));//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
 }
@@ -162,40 +162,38 @@ vec2 _reflect(vec2 i, vec2 n)
 
 float march()
 {
-	float e = 0;	
-	
-	int i = 0;
-	int j = 1;
-//	ray r;
-//	r.position = pos;
-//	r.direction = rayy;
-//	r.depth = depth;
+	float e = 0;		
+	int k = 0;
+
 	do
-	{	
-		vec2 p = ray_buffer[i].position;
-		int k = 0;
-		float t = 0;
-		while (k < 20 && t < 2)
-		{
+	{
+		// pop ray from stack
+		ray ra = ray_buffer[k--];
+
+		vec2 o = ra.position;
+		float t = 1e-3;
+		float s = scene(o.x, o.y).signed_dist > 0 ? 1 : -1;		
+		for (int i = 0; i < 20 && t < 2; i++)
+		{		
+			vec2 p = o + ra.direction * t;
+
 			result r = scene(p.x, p.y);
-			if (r.signed_dist < EPSILON)
+			if (s * r.signed_dist < EPSILON)
 			{
-				e += ray_buffer[i].coefficient * r.emissive;
-				if (ray_buffer[i].depth > 0 && r.reflective > 0)
+				e += ra.coefficient * r.emissive;				
+				if (ra.depth > 0 && r.reflective > 0)
 				{
-					vec2 n = normal(p.x, p.y);
-					vec2 rf = reflect(ray_buffer[i].direction, n);					
-					ray_buffer[j] = ray(p + rf * 1e-4, rf, r.reflective,ray_buffer[i].depth - 1 );
-					if (++j == RAY_BUFFER_SIZE) { j = 0; }
+					vec2 n = s * normal(p.x, p.y);
+					vec2 rf = reflect(ra.direction, n);
+					
+					// push reflection ray to stack
+					ray_buffer[++k] = ray(p + rf * 1e-4, rf, r.reflective, ra.depth - 1);
 				}
 				break;
-			}
-			p += ray_buffer[i].direction * r.signed_dist;
-			k++;
-			t += r.signed_dist;
-		}
-		if (++i == RAY_BUFFER_SIZE) { i = 0; }
-	} while (i != j);
+			}			
+			t += s * r.signed_dist;
+		}		
+	} while (k >= 0);
 	return e;
 }
 
@@ -209,7 +207,7 @@ float ray_sample(vec2 pos)
 		float angle = TWO_PI * (i + noise) / SAMPLE;
 		//float a =  (i + texture2D(texture1, gl_FragCoord.xy / noise_size).x);
 		//float a =  2*3.1415926 *(i + o*1 + 0*  LFSR_Rand_Gen(pos)) / 64;
-		// push sample ray to buffer for ray marching
+		// push sample ray to stack for ray marching
 		ray_buffer[0] = ray(pos, vec2(cos(angle), sin(angle)), 1, RAY_DEPTH);
 		emissive += march();
 	}

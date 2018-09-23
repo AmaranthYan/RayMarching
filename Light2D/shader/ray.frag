@@ -46,6 +46,7 @@ struct result
 	float emissive;
 	float reflective;
 	float refractive;
+	float absorption;
 };
 
 
@@ -140,9 +141,9 @@ result subtract_op(result a, result b)
 result scene(float x, float y)
 {
 	vec2 pos = vec2(x, y);
-	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.05), 4, 0f, 0 };
+	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.05), 4, 0f, 0, 0 };
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
-	result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.14, 0.1), 0),0, 0.2f, 1.5};
+	result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),0, 0.2f, 1.5, 4};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
 	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),0.0f,0.2f, 1.5 };
 	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),0.0f,0.2f,1.5 };
@@ -165,6 +166,10 @@ vec2 _reflect(vec2 i, vec2 n)
 	return i - 2 * dot(i, n) * n;
 }
 
+float beerLambert(float a, float d) {
+    return exp(-a * d);
+}
+
 float march()
 {
 	float e = 0;		
@@ -185,7 +190,8 @@ float march()
 			result r = scene(p.x, p.y);
 			if (s * r.signed_dist < EPSILON)
 			{
-				e += ra.coefficient * r.emissive;				
+				float bl = s > 0 ? 1 : beerLambert(r.absorption, t);
+				e += bl * ra.coefficient * r.emissive;				
 				if (ra.depth > 0 && (r.reflective > 0 || r.refractive > 0))
 				{
 					vec2 n = s * normal(p.x, p.y);
@@ -199,7 +205,7 @@ float march()
 						}
 						else
 						{
-							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, 1-r.reflective, ra.depth - 1);
+							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, bl * (1-r.reflective), ra.depth - 1);
 						}
 					}
 					if (rfl > 0)
@@ -207,7 +213,7 @@ float march()
 						vec2 rf = reflect(ra.direction, n);
 					
 						// push reflection ray to stack
-						ray_buffer[++k] = ray(p + rf * 1e-4, rf, r.reflective, ra.depth - 1);
+						ray_buffer[++k] = ray(p + rf * 1e-4, rf, bl * r.reflective, ra.depth - 1);
 					}
 					
 				}

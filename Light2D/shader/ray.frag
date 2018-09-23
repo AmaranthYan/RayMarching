@@ -1,15 +1,20 @@
 #version 460 core
 
 #define RAY_DEPTH 3
-#define SAMPLE 64
+#define SAMPLE 16
 #define EPSILON 1e-6f
 #define TWO_PI 6.28318530718f
 
+in vec2 tex_coords;
 out vec4 frag_color;
 uniform vec2 viewport_size;
 
 uniform uvec2 noise_size;
-uniform sampler2D noise_map;
+
+uniform int rangle[SAMPLE];
+uniform int iteration;
+layout (location = 0)uniform sampler2D noise_map;
+layout (location = 1)uniform sampler2D frame;
 
 uniform float rotation;
 
@@ -135,16 +140,16 @@ result subtract_op(result a, result b)
 result scene(float x, float y)
 {
 	vec2 pos = vec2(x, y);
-	result a = { circle_sdf(pos, vec2(0.6, 0.5), 0.05), 2, 0f, 0 };
+	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.05), 4, 0f, 0 };
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
-	//result c = {rectangle_sdf(pos, vec2(1.2, 0.5), vec2(0.3, 0.3), rotation),0, 0.9f};
+	result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.14, 0.1), 0),0, 0.2f, 1.5};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
-	result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.1f, rotation),0.0f,1f, 0 };
-	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.1f, rotation),0.0f,1f };
-	vec2 v[3] = {vec2(0.7, 0.48), vec2(1.0, 0.3), vec2(0.8, 0.1)};
-	result d = { triangle_sdf(pos, v),0f, 0.9f,0 };
+	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),0.0f,0.2f, 1.5 };
+	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),0.0f,0.2f,1.5 };
+	//vec2 v[3] = {vec2(0.85, 0.69), vec2(1.3, 0.4), vec2(0.85, 0.11)};
+	//result d = { triangle_sdf(pos, v),0f, 0.2f,1.5 };
 	//result d = { segment_sdf(pos, vec2(0.2, 0.2), vec2(0.4, 0.4)) - 0.1,2f };
-	return union_op(d,union_op(c,a));//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
+	return union_op(c,a);//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
 }
 
 vec2 normal(float x, float y)
@@ -171,9 +176,9 @@ float march()
 		ray ra = ray_buffer[k--];
 
 		vec2 o = ra.position;
-		float t = 1e-3;
+		float t = 0;
 		float s = scene(o.x, o.y).signed_dist > 0 ? 1 : -1;		
-		for (int i = 0; i < 20 && t < 2; i++)
+		for (int i = 0; i < 64 && t < 2; i++)
 		{		
 			vec2 p = o + ra.direction * t;
 
@@ -181,13 +186,30 @@ float march()
 			if (s * r.signed_dist < EPSILON)
 			{
 				e += ra.coefficient * r.emissive;				
-				if (ra.depth > 0 && r.reflective > 0)
+				if (ra.depth > 0 && (r.reflective > 0 || r.refractive > 0))
 				{
 					vec2 n = s * normal(p.x, p.y);
-					vec2 rf = reflect(ra.direction, n);
+					float rfl = r.reflective;
+					if (r.refractive > 0)
+					{
+						vec2 rfr = refract(ra.direction, n, s < 0 ? r.refractive : 1/r.refractive);
+						if (rfr == 0)
+						{
+							rfl = 1;
+						}
+						else
+						{
+							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, 1-r.reflective, ra.depth - 1);
+						}
+					}
+					if (rfl > 0)
+					{
+						vec2 rf = reflect(ra.direction, n);
 					
-					// push reflection ray to stack
-					ray_buffer[++k] = ray(p + rf * 1e-4, rf, r.reflective, ra.depth - 1);
+						// push reflection ray to stack
+						ray_buffer[++k] = ray(p + rf * 1e-4, rf, r.reflective, ra.depth - 1);
+					}
+					
 				}
 				break;
 			}			
@@ -201,17 +223,30 @@ float march()
 float ray_sample(vec2 pos)
 {
 	float emissive = 0;
-	float noise = texture2D(noise_map, gl_FragCoord.xy / noise_size).x;
-	for (uint i = 0; i < SAMPLE; i++)
+//	float noise = texture2D(noise_map, (gl_FragCoord.xy + iteration) / noise_size).x;
+//	for (int i = 0; i < SAMPLE; i++)
+//	{
+//		float angle = TWO_PI * (i * 16 + (iteration + 1) / 2 * (1 - ((iteration + 1) % 2) * 2) + noise) / 256;//SAMPLE;
+//		//float angle = (i + noise);
+//		//float a =  (i + texture2D(texture1, gl_FragCoord.xy / noise_size).x);
+//		//float a =  2*3.1415926 *(i + o*1 + 0*  LFSR_Rand_Gen(pos)) / 64;
+//		// push sample ray to stack for ray marching
+//		ray_buffer[0] = ray(pos, vec2(cos(angle), sin(angle)), 1, RAY_DEPTH);
+//		emissive += march();
+//	}
+
+	float noise = texture2D(noise_map, (gl_FragCoord.xy) / noise_size).x;
+	for (int i = 0; i < SAMPLE; i++)
 	{
-		float angle = TWO_PI * (i + noise) / SAMPLE;
+		float angle = TWO_PI * (rangle[i] + noise) / 256;//SAMPLE;
+		//float angle = (i + noise);
 		//float a =  (i + texture2D(texture1, gl_FragCoord.xy / noise_size).x);
 		//float a =  2*3.1415926 *(i + o*1 + 0*  LFSR_Rand_Gen(pos)) / 64;
 		// push sample ray to stack for ray marching
 		ray_buffer[0] = ray(pos, vec2(cos(angle), sin(angle)), 1, RAY_DEPTH);
 		emissive += march();
 	}
-	return emissive / SAMPLE;
+	return emissive / 256;//SAMPLE;
 }
 
 void main()
@@ -219,8 +254,9 @@ void main()
 	vec2 frag_coord = gl_FragCoord.xy / min(viewport_size.x, viewport_size.y);
 	float color = ray_sample(frag_coord);
 	//float r = texture2D(texture1, TexCoord).x / 20.f;
-	vec4 c = vec4(normal(frag_coord.x, frag_coord.y) * 0.5 + 0.5,0,1);	
-	frag_color = color.xxxx;
+	//vec4 c = vec4(normal(frag_coord.x, frag_coord.y) * 0.5 + 0.5,0,1);	
+	//frag_color = color.xxxx;
+	frag_color = texture2D(frame, tex_coords) + vec4(color.xxx,1);
 	//FragColor = texture2D(texture1, gl_FragCoord.xy / noise_size.xy).xxxx;
 //	if (trace(gl_FragCoord.xy) - vec2(600,600)) < 50)
 //	{

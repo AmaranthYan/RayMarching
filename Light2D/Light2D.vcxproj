@@ -127,6 +127,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="shader\screen.frag" />
+    <None Include="shader\screen.vert" />
     <None Include="shader\ray.frag" />
     <None Include="shader\ray.vert" />
     <None Include="svpng\svpng.inc" />

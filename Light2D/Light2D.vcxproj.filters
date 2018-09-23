@@ -11,6 +11,12 @@
     <None Include="svpng\svpng.inc">
       <Filter>Lib</Filter>
     </None>
+    <None Include="shader\screen.frag">
+      <Filter>Shader</Filter>
+    </None>
+    <None Include="shader\screen.vert">
+      <Filter>Shader</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Shader">
@@ -24,10 +30,15 @@
     <ClInclude Include="stb_image.h">
       <Filter>Lib</Filter>
     </ClInclude>
+    <ClInclude Include="source\NoiseGenerator.h" />
+    <ClInclude Include="source\Shader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="glad\src\glad.c">
       <Filter>Lib</Filter>
     </ClCompile>
+    <ClCompile Include="source\Light2D.cpp" />
+    <ClCompile Include="source\NoiseGenerator.cpp" />
+    <ClCompile Include="source\Shader.cpp" />
   </ItemGroup>
 </Project>

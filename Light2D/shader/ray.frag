@@ -141,7 +141,7 @@ result subtract_op(result a, result b)
 result scene(float x, float y)
 {
 	vec2 pos = vec2(x, y);
-	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.05), 4, 0f, 0, 0 };
+	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.03), 10, 0f, 0, 0 };
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
 	result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),0, 0.2f, 1.5, 4};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
@@ -190,8 +190,8 @@ float march()
 			result r = scene(p.x, p.y);
 			if (s * r.signed_dist < EPSILON)
 			{
-				float bl = s > 0 ? 1 : beerLambert(r.absorption, t);
-				e += bl * ra.coefficient * r.emissive;				
+				float att = s < 0 ? beerLambert(r.absorption, t) : 1;
+				e += r.emissive * ra.coefficient * att;				
 				if (ra.depth > 0 && (r.reflective > 0 || r.refractive > 0))
 				{
 					vec2 n = s * normal(p.x, p.y);
@@ -205,7 +205,7 @@ float march()
 						}
 						else
 						{
-							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, bl * (1-r.reflective), ra.depth - 1);
+							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, att * (1-r.reflective), ra.depth - 1);
 						}
 					}
 					if (rfl > 0)
@@ -213,7 +213,7 @@ float march()
 						vec2 rf = reflect(ra.direction, n);
 					
 						// push reflection ray to stack
-						ray_buffer[++k] = ray(p + rf * 1e-4, rf, bl * r.reflective, ra.depth - 1);
+						ray_buffer[++k] = ray(p + rf * 1e-4, rf, att * r.reflective, ra.depth - 1);
 					}
 					
 				}

@@ -17,6 +17,7 @@
     <None Include="shader\screen.vert">
       <Filter>Shader</Filter>
     </None>
+    <None Include="shader\compute.shader" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Shader">

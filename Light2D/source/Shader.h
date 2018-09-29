@@ -8,6 +8,7 @@ class Shader
 {
 public:
 	Shader(const char *vertex_file, const char *fragment_file);
+	Shader(const char *compute_file);
 	// remove copy constructor/assignment
 	Shader(const Shader &) = delete;
 	Shader &operator=(const Shader &) = delete;
@@ -46,4 +47,5 @@ private:
 	void Load(const char *shader_file, char *source);
 	unsigned int Compile(const int shader_type, const char *shader_file);
 	void Link(const unsigned int vertex_shader, const unsigned int fragment_shader);
+	void Link(const unsigned int compute_shader);
 };

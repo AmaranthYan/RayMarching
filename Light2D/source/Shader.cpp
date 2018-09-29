@@ -17,6 +17,16 @@ Shader::Shader(const char *vertex_file, const char *fragment_file)
 	glDeleteShader(fragment_shader);
 }
 
+Shader::Shader(const char *compute_file)
+{
+	unsigned int compute_shader = Compile(GL_COMPUTE_SHADER, compute_file);
+
+	shader_program = glCreateProgram();
+	Link(compute_shader);
+
+	glDeleteShader(compute_shader);
+}
+
 void Shader::Use()
 {
 	glUseProgram(shader_program);
@@ -41,7 +51,7 @@ void Shader::Load(const char *shader_file, char *source)
 
 unsigned int Shader::Compile(const int shader_type, const char *shader_file)
 {
-	assert(shader_type == GL_VERTEX_SHADER || shader_type == GL_FRAGMENT_SHADER);
+	assert(shader_type == GL_VERTEX_SHADER || shader_type == GL_FRAGMENT_SHADER || shader_type == GL_COMPUTE_SHADER);
 
 	int success;
 	char info_log[LOG_SIZE];
@@ -78,6 +88,23 @@ void Shader::Link(const unsigned int vertex_shader, const unsigned int fragment_
 	if (!success)
 	{
 		glGetProgramInfoLog(shader_program, LOG_SIZE, NULL, info_log);
-		std::cout << "shader program link failed" << info_log << std::endl;
+		std::cout << "vf shader program link failed" << info_log << std::endl;
+	}
+}
+
+void Shader::Link(const unsigned int compute_shader)
+{
+	int success;
+	char info_log[LOG_SIZE];
+
+	glAttachShader(shader_program, compute_shader);
+
+	glLinkProgram(shader_program);
+
+	glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		glGetProgramInfoLog(shader_program, LOG_SIZE, NULL, info_log);
+		std::cout << "compute shader program link failed" << info_log << std::endl;
 	}
 }

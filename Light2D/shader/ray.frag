@@ -33,7 +33,7 @@ struct ray
 {
 	vec2 position;
 	vec2 direction;
-	float coefficient;
+	vec3 coefficient;
 	int depth;	
 };
 
@@ -48,7 +48,7 @@ struct result
 {
 	float signed_dist;
 	vec3 emissive;
-	float reflective;
+	vec3 reflective;
 	float refractive;
 	float absorption;
 };
@@ -145,14 +145,21 @@ result subtract_op(result a, result b)
 result scene(float x, float y)
 {
 	vec2 pos = vec2(x, y);
-	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.03), vec3(10, 5,3), 0f, 0, 0 };
+	result a = 
+	{
+	circle_sdf(pos, vec2(0.40, 0.7), 0.03),
+	vec3(10, 5,3),
+	vec3(0),
+	0,
+	0
+	};
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
 	//result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),vec3(0), 0.2f, 1.5, 4};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
 	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),vec3(0),0.2f, 1.5,4 };
 	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),vec3(0),0.2f,1.5, 4 };
 	vec2 v[3] = {vec2(0.8, 0.9), vec2(1.0, 0.5), vec2(0.6, 0.5)};
-	result d = { triangle_sdf(pos, v),vec3(0), 0.2f,1.5 ,4};
+	result d = { triangle_sdf(pos, v),vec3(0), vec3(0.92,0,0),1.5 ,4};
 	//result d = { segment_sdf(pos, vec2(0.2, 0.2), vec2(0.4, 0.4)) - 0.1,2f };
 	return union_op(d,a);//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
 }
@@ -196,23 +203,23 @@ vec3 march()
 			{
 				float att = s < 0 ? beerLambert(r.absorption, t) : 1;
 				e += r.emissive * ra.coefficient * att;				
-				if (ra.depth > 0 && (r.reflective > 0 || r.refractive > 0))
+				if (ra.depth > 0 && (length(r.reflective) > 0 || r.refractive > 0))
 				{
 					vec2 n = s * normal(p.x, p.y);
-					float rfl = r.reflective;
+					vec3 rfl = r.reflective;
 					if (r.refractive > 0)
 					{
 						vec2 rfr = refract(ra.direction, n, s < 0 ? r.refractive : 1/r.refractive);
 						if (rfr == 0)
 						{
-							rfl = 1;
+							rfl = vec3(1);
 						}
 						else
 						{
-							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, att * (1-r.reflective), ra.depth - 1);
+							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, att * (vec3(1)-r.reflective), ra.depth - 1);
 						}
 					}
-					if (rfl > 0)
+					if (length(rfl) > 0)
 					{
 						vec2 rf = reflect(ra.direction, n);
 					
@@ -253,7 +260,7 @@ vec3 ray_sample(vec2 pos)
 		//float a =  (i + texture2D(texture1, gl_FragCoord.xy / noise_size).x);
 		//float a =  2*3.1415926 *(i + o*1 + 0*  LFSR_Rand_Gen(pos)) / 64;
 		// push sample ray to stack for ray marching
-		ray_buffer[0] = ray(pos, vec2(cos(angle), sin(angle)), 1, RAY_DEPTH);
+		ray_buffer[0] = ray(pos, vec2(cos(angle), sin(angle)), vec3(1), RAY_DEPTH);
 		emissive += march();
 	}
 	return emissive / (SAMPLE * ITERATION);

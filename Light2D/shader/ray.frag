@@ -2,21 +2,24 @@
 
 #define RAY_DEPTH 3
 #define SAMPLE 16
+#define ITERATION 16
 #define EPSILON 1e-6f
 #define TWO_PI 6.28318530718f
 
 in vec2 tex_coords;
-out vec4 frag_color;
+layout (location = 0) out vec4 frag_color;
+layout (location = 1) out float frag_color2;
+layout (location = 2) out float frag_color3;
 uniform vec2 viewport_size;
 
 uniform uvec2 noise_size;
 
 uniform int rangle[SAMPLE];
-uniform int iteration;
 layout (location = 0)uniform sampler2D noise_map;
 layout (location = 1)uniform sampler2D frame;
+layout (location = 2)uniform sampler2D frame_G;
+layout (location = 3)uniform sampler2D frame_B;
 
-uniform float rotation;
 
 struct scene_sdf
 {
@@ -38,12 +41,13 @@ uniform scene_sdf static_object[];
 uniform scene_sdf dynamic_object[];
 // use stack buffer to store rays for iterations and solve ray marching without recursions
 // max buffer size equals max reflection/refraction depth
-ray ray_buffer[RAY_DEPTH];
+// with RGB colored ray, need to plus 2 to buffer size to accommodate refrected rays
+ray ray_buffer[RAY_DEPTH + 2];
 
 struct result
 {
 	float signed_dist;
-	float emissive;
+	vec3 emissive;
 	float reflective;
 	float refractive;
 	float absorption;
@@ -141,16 +145,16 @@ result subtract_op(result a, result b)
 result scene(float x, float y)
 {
 	vec2 pos = vec2(x, y);
-	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.03), 10, 0f, 0, 0 };
+	result a = { circle_sdf(pos, vec2(0.40, 0.7), 0.03), vec3(10, 5,3), 0f, 0, 0 };
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
-	result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),0, 0.2f, 1.5, 4};
+	//result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),vec3(0), 0.2f, 1.5, 4};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
-	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),0.0f,0.2f, 1.5 };
-	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),0.0f,0.2f,1.5 };
-	//vec2 v[3] = {vec2(0.85, 0.69), vec2(1.3, 0.4), vec2(0.85, 0.11)};
-	//result d = { triangle_sdf(pos, v),0f, 0.2f,1.5 };
+	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),vec3(0),0.2f, 1.5,4 };
+	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),vec3(0),0.2f,1.5, 4 };
+	vec2 v[3] = {vec2(0.8, 0.9), vec2(1.0, 0.5), vec2(0.6, 0.5)};
+	result d = { triangle_sdf(pos, v),vec3(0), 0.2f,1.5 ,4};
 	//result d = { segment_sdf(pos, vec2(0.2, 0.2), vec2(0.4, 0.4)) - 0.1,2f };
-	return union_op(c,a);//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
+	return union_op(d,a);//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
 }
 
 vec2 normal(float x, float y)
@@ -170,9 +174,9 @@ float beerLambert(float a, float d) {
     return exp(-a * d);
 }
 
-float march()
+vec3 march()
 {
-	float e = 0;		
+	vec3 e = vec3(0);
 	int k = 0;
 
 	do
@@ -226,9 +230,9 @@ float march()
 }
 
 
-float ray_sample(vec2 pos)
+vec3 ray_sample(vec2 pos)
 {
-	float emissive = 0;
+	vec3 emissive = vec3(0);
 //	float noise = texture2D(noise_map, (gl_FragCoord.xy + iteration) / noise_size).x;
 //	for (int i = 0; i < SAMPLE; i++)
 //	{
@@ -243,8 +247,8 @@ float ray_sample(vec2 pos)
 
 	float noise = texture2D(noise_map, (gl_FragCoord.xy) / noise_size).x;
 	for (int i = 0; i < SAMPLE; i++)
-	{
-		float angle = TWO_PI * (rangle[i] + noise) / 256;//SAMPLE;
+	{	
+		float angle = TWO_PI * (rangle[i] + noise) / (SAMPLE * ITERATION);
 		//float angle = (i + noise);
 		//float a =  (i + texture2D(texture1, gl_FragCoord.xy / noise_size).x);
 		//float a =  2*3.1415926 *(i + o*1 + 0*  LFSR_Rand_Gen(pos)) / 64;
@@ -252,17 +256,16 @@ float ray_sample(vec2 pos)
 		ray_buffer[0] = ray(pos, vec2(cos(angle), sin(angle)), 1, RAY_DEPTH);
 		emissive += march();
 	}
-	return emissive / 256;//SAMPLE;
+	return emissive / (SAMPLE * ITERATION);
 }
 
 void main()
 {
 	vec2 frag_coord = gl_FragCoord.xy / min(viewport_size.x, viewport_size.y);
-	float color = ray_sample(frag_coord);
+	vec3 color = ray_sample(frag_coord);
 	//float r = texture2D(texture1, TexCoord).x / 20.f;
 	//vec4 c = vec4(normal(frag_coord.x, frag_coord.y) * 0.5 + 0.5,0,1);	
-	//frag_color = color.xxxx;
-	frag_color = texture2D(frame, tex_coords) + vec4(color.xxx,1);
+	frag_color = texture2D(frame, tex_coords) + vec4(color.xyz, 1);
 	//FragColor = texture2D(texture1, gl_FragCoord.xy / noise_size.xy).xxxx;
 //	if (trace(gl_FragCoord.xy) - vec2(600,600)) < 50)
 //	{

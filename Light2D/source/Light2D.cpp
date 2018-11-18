@@ -27,7 +27,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 
 	glBindTexture(GL_TEXTURE_2D, colorBuffer);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);	
 
 	iteration = 0;
 
@@ -130,8 +130,6 @@ int main(int argc, char * argv[])
 	Shader shaderProgram("shader/ray.vert", "shader/ray.frag");
 	int uniform_WindowSize = shaderProgram.GetUniform("viewport_size");
 	int uniform_noise_size = shaderProgram.GetUniform("noise_size");
-	int uniform_rotation = shaderProgram.GetUniform("rotation");
-	int uniform_iteration = shaderProgram.GetUniform("iteration");
 	float rot = 0;
 
 	shaderProgram.Use();
@@ -152,9 +150,11 @@ int main(int argc, char * argv[])
 	glBindTexture(GL_TEXTURE_2D, colorBuffer);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glBindTexture(GL_TEXTURE_2D, 0);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBuffer, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	GLenum DrawBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+	glDrawBuffers(3, DrawBuffers);
 
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
@@ -215,12 +215,10 @@ int main(int argc, char * argv[])
 			glBindTexture(GL_TEXTURE_2D, colorBuffer);
 
 			shaderProgram.Use();
-			glUniform2f(uniform_WindowSize, windowWidth, windowHeight);
-			glUniform1f(uniform_rotation, rot);
+			glUniform2f(uniform_WindowSize, windowWidth, windowHeight);			
 			glUniform1iv(shaderProgram.GetUniform("rangle"), 16, angle+iteration * 16);
 
-			glUniform1i(uniform_iteration, iteration++);
-			rot += 0.01;
+			iteration++;
 
 			glBindVertexArray(VAO);
 			//glDrawArrays(GL_TRIANGLES, 0, 3);

@@ -202,7 +202,7 @@ int main(int argc, char * argv[])
 
 		// rendering
 
-		if (iteration < 16)
+		if (iteration < 32)
 		{
 			glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
@@ -215,8 +215,14 @@ int main(int argc, char * argv[])
 			glBindTexture(GL_TEXTURE_2D, colorBuffer);
 
 			shaderProgram.Use();
-			glUniform2f(uniform_WindowSize, windowWidth, windowHeight);			
-			glUniform1iv(shaderProgram.GetUniform("rangle"), 16, angle+iteration * 16);
+			glUniform2f(uniform_WindowSize, windowWidth, windowHeight);
+			int a[16] = {};
+			for (int i = 0; i < 16; i++)
+			{
+				a[i] = iteration * 16 + i;
+			}
+			
+			glUniform1iv(shaderProgram.GetUniform("rangle"), 16, a);
 
 			iteration++;
 

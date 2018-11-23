@@ -1,6 +1,6 @@
 #version 460 core
 
-#define RAY_DEPTH 3
+#define RAY_DEPTH 5
 #define SAMPLE 16
 #define ITERATION 32
 #define EPSILON 1e-6f
@@ -148,20 +148,20 @@ result scene(float x, float y)
 	result a = 
 	{
 	circle_sdf(pos, vec2(0.40, 0.7), 0.03),
-	vec3(10, 5,3),
+	vec3(10, 10,10),
 	vec3(0),
 	vec3(0),
 	vec3(0)
 	};
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
-	//result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),vec3(0), 0.2f, 1.5, 4};
+	result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),vec3(0), vec3(0.2, 0.1, 0.1), vec3(1.3,1.4,1.5), vec3(5,3,1)};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
 	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),vec3(0),0.2f, 1.5,4 };
 	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),vec3(0),0.2f,1.5, 4 };
 	vec2 v[3] = {vec2(0.8, 0.9), vec2(1.0, 0.5), vec2(0.6, 0.5)};
-	result d = { triangle_sdf(pos, v),vec3(0), vec3(0.5,0,0),vec3(1.5,0,0) , vec3(4,4,1)};
+	result d = { triangle_sdf(pos, v),vec3(0), vec3(0.0,0.0,0),vec3(1.5,2.5,3.5) , vec3(4,4,1)};
 	//result d = { segment_sdf(pos, vec2(0.2, 0.2), vec2(0.4, 0.4)) - 0.1,2f };
-	return union_op(d,a);//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
+	return union_op(c,a);//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
 }
 
 vec2 normal(float x, float y)
@@ -201,30 +201,63 @@ vec3 march()
 			result r = scene(p.x, p.y);
 			if (s * r.signed_dist < EPSILON)
 			{
-				vec3 att = s < 0 ? beerLambert(r.absorption, t) : vec3(1);
-				e += r.emissive * ra.coefficient * att;				
+				if (s < 0)
+				{
+					ra.coefficient *=  beerLambert(r.absorption, t);
+				}				
+				e += r.emissive * ra.coefficient;				
 				if (ra.depth > 0)
 				{
-					vec2 n = s * normal(p.x, p.y);
-					vec3 rfl = r.reflective;
-					if (r.refractive.x > 0)
+					vec2 n = s * normal(p.x, p.y);		
+
+					if (ra.coefficient[0] > 0 && r.refractive[0] > 0)
 					{
-						vec2 rfr = refract(ra.direction, n, s < 0 ? r.refractive.x : 1/r.refractive.x);
-						if (rfr == 0)
+						vec2 rf = refract(ra.direction, n, s < 0 ? r.refractive[0] : 1 / r.refractive[0]);
+						if (rf == 0)
 						{
-							rfl = vec3(1);
+							r.reflective[0] = 1; // total internal reflection
 						}
 						else
 						{
-							ray_buffer[++k] = ray(p + rfr * 1e-4, rfr, att * (vec3(1)-r.reflective), ra.depth - 1);
-						}
+							vec3 c = vec3(1 - r.reflective[0], 0, 0);							
+							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
+						} 
 					}
-					if (length(rfl) > 0)
+
+					if (ra.coefficient[1] > 0 && r.refractive[1] > 0)
+					{
+						vec2 rf = refract(ra.direction, n, s < 0 ? r.refractive[1] : 1 / r.refractive[1]);
+						if (rf == 0)
+						{
+							r.reflective[1] = 1; // total internal reflection
+						}
+						else
+						{
+							vec3 c = vec3(0, 1 - r.reflective[1], 0);							
+							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
+						} 
+					}
+
+					if (ra.coefficient[2] > 0 && r.refractive[2] > 0)
+					{
+						vec2 rf = refract(ra.direction, n, s < 0 ? r.refractive[2] : 1 / r.refractive[2]);
+						if (rf == 0)
+						{
+							r.reflective[2] = 1; // total internal reflection
+						}
+						else
+						{
+							vec3 c = vec3(0, 0, 1 - r.reflective[2]);							
+							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
+						} 
+					}
+
+					if (length(r.reflective) > 0)
 					{
 						vec2 rf = reflect(ra.direction, n);
 					
 						// push reflection ray to stack
-						ray_buffer[++k] = ray(p + rf * 1e-4, rf, att * rfl, ra.depth - 1);
+						ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * r.reflective, ra.depth - 1);
 					}
 					
 				}

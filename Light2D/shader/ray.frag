@@ -17,9 +17,6 @@ uniform uvec2 noise_size;
 uniform int rangle[SAMPLE];
 layout (location = 0)uniform sampler2D noise_map;
 layout (location = 1)uniform sampler2D frame;
-layout (location = 2)uniform sampler2D frame_G;
-layout (location = 3)uniform sampler2D frame_B;
-
 
 struct scene_sdf
 {
@@ -48,7 +45,7 @@ struct result
 {
 	float signed_dist;
 	vec3 emissive;
-	vec3 reflective;
+	vec3 reflective; // r0
 	vec3 refractive;
 	vec3 absorption;
 };
@@ -154,7 +151,13 @@ result scene(float x, float y)
 	vec3(0)
 	};
 	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
-	result c = {rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),vec3(0), vec3(0.2, 0.1, 0.1), vec3(1.3,1.4,1.5), vec3(5,3,1)};
+	result c = {
+		rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),
+		vec3(0),
+		vec3(0.57, 0.57,0.57),
+		vec3(2.86,2.86,2.86),
+		vec3(10,15,15)
+	};
 	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
 	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),vec3(0),0.2f, 1.5,4 };
 	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),vec3(0),0.2f,1.5, 4 };
@@ -179,6 +182,12 @@ vec2 _reflect(vec2 i, vec2 n)
 
 vec3 beerLambert(vec3 a, float d) {
     return vec3(exp(-a.x * d), exp(-a.y * d), exp(-a.z * d));
+}
+
+float fresnelSchlick(float r0, float cos_i) {
+    float a = 1.0f - cos_i;
+    float aa = a * a;
+    return r0 + (1.0f - r0) * aa * aa * a;
 }
 
 vec3 march()
@@ -208,17 +217,20 @@ vec3 march()
 				e += r.emissive * ra.coefficient;				
 				if (ra.depth > 0)
 				{
-					vec2 n = s * normal(p.x, p.y);		
+					vec2 n = s * normal(p.x, p.y);
+					vec3 eta = s < 0 ? r.refractive : 1 / r.refractive;
+					float cos_i = -dot(ra.direction, n);
 
 					if (ra.coefficient[0] > 0 && r.refractive[0] > 0)
 					{
-						vec2 rf = refract(ra.direction, n, s < 0 ? r.refractive[0] : 1 / r.refractive[0]);
+						vec2 rf = refract(ra.direction, n, eta[0]);
 						if (rf == 0)
 						{
 							r.reflective[0] = 1; // total internal reflection
 						}
 						else
 						{
+							r.reflective[0] = fresnelSchlick(r.reflective[0], eta[0] < 1 ? cos_i : -dot(rf, n));
 							vec3 c = vec3(1 - r.reflective[0], 0, 0);							
 							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
 						} 
@@ -226,13 +238,14 @@ vec3 march()
 
 					if (ra.coefficient[1] > 0 && r.refractive[1] > 0)
 					{
-						vec2 rf = refract(ra.direction, n, s < 0 ? r.refractive[1] : 1 / r.refractive[1]);
+						vec2 rf = refract(ra.direction, n, eta[1]);
 						if (rf == 0)
 						{
 							r.reflective[1] = 1; // total internal reflection
 						}
 						else
 						{
+							r.reflective[1] = fresnelSchlick(r.reflective[1], eta[1] < 1 ? cos_i : -dot(rf, n));
 							vec3 c = vec3(0, 1 - r.reflective[1], 0);							
 							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
 						} 
@@ -240,13 +253,14 @@ vec3 march()
 
 					if (ra.coefficient[2] > 0 && r.refractive[2] > 0)
 					{
-						vec2 rf = refract(ra.direction, n, s < 0 ? r.refractive[2] : 1 / r.refractive[2]);
+						vec2 rf = refract(ra.direction, n, eta[2]);
 						if (rf == 0)
 						{
 							r.reflective[2] = 1; // total internal reflection
 						}
 						else
 						{
+							r.reflective[2] = fresnelSchlick(r.reflective[2], eta[2] < 1 ? cos_i : -dot(rf, n));
 							vec3 c = vec3(0, 0, 1 - r.reflective[2]);							
 							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
 						} 

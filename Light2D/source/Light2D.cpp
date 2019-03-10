@@ -14,11 +14,14 @@ using namespace std::chrono;
 #define DEFAULT_WIDTH 1920
 #define DEFAULT_HEIGHT 1080
 
+#define ITERATION 32
 
 unsigned int colorBuffer;
 unsigned int iteration;
 
 int windowWidth = DEFAULT_WIDTH, windowHeight = DEFAULT_HEIGHT;
+double cursorX, cursorY;
+bool editMode = true;
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
 	glViewport(0, 0, width, height);
@@ -32,6 +35,31 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 	iteration = 0;
 
 	std::cout << "Resize viewport to " << width << " x " << height << std::endl;
+}
+
+void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	if (editMode)
+	{
+		cursorX = xpos;
+		cursorY = windowHeight - ypos;
+		iteration = 0;
+
+		glBindTexture(GL_TEXTURE_2D, colorBuffer);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, windowWidth, windowHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glClearTexImage(colorBuffer, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	}
+
+	std::cout << "Cursor pos " << xpos << ", " << ypos << std::endl;
+}
+
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+{
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+	{
+		editMode = !editMode;
+	}
 }
 
 int main(int argc, char * argv[])
@@ -61,7 +89,10 @@ int main(int argc, char * argv[])
 
 	glViewport(0, 0, DEFAULT_WIDTH, DEFAULT_HEIGHT);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+	glfwSetCursorPosCallback(window, cursor_pos_callback);
+	glfwSetMouseButtonCallback(window, mouse_button_callback);
 
+	// load noise texture
 	int width, height, nrChannels;
 	stbi_us *data = stbi_load_16("noise_map.png", &width, &height, &nrChannels, 0);
 	for (int i = 0; i < width * height * nrChannels; i++)
@@ -129,17 +160,25 @@ int main(int argc, char * argv[])
 
 	Shader shaderProgram("shader/ray.vert", "shader/ray.frag");
 	int uniform_WindowSize = shaderProgram.GetUniform("viewport_size");
-	int uniform_noise_size = shaderProgram.GetUniform("noise_size");
+	int uniform_NoiseSize = shaderProgram.GetUniform("noise_size");
 	float rot = 0;
 
 	shaderProgram.Use();
 	glUniform1i(shaderProgram.GetUniform("noise_map"), 0);
-	glUniform2ui(uniform_noise_size, width, height);
+	glUniform2ui(uniform_NoiseSize, width, height);
 
-	glUniform1i(shaderProgram.GetUniform("frame"), 1);
+	glUniform1i(shaderProgram.GetUniform("frame_canvas"), 1);
+	glUniform1i(shaderProgram.GetUniform("iteration_count"), ITERATION);
+
+	int uniform_LightPos = shaderProgram.GetUniform("light1.position");
+	int uniform_LightRad = shaderProgram.GetUniform("light1.radius");
+	int uniform_LightLum = shaderProgram.GetUniform("light1.luminance");
+
+	// light attributes
+	glUniform1f(uniform_LightRad, 0.04);
+	glUniform3f(uniform_LightLum, 8, 8, 8);
 	
-	std::cout << shaderProgram.GetUniform("noise_map") << std::endl;
-
+	//std::cout << shaderProgram.GetUniform("noise_map") << std::endl;
 
 	Shader shaderProgram2("shader/screen.vert", "shader/screen.frag");
 
@@ -167,30 +206,6 @@ int main(int argc, char * argv[])
 	std::cout << "Start Rendering Loop" << std::endl;
 	iteration = 0;
 
-	int angle[256] = 
-	{
-		12, 170, 95, 97, 243, 173, 102, 55, 132, 239, 149, 230, 87, 29, 203, 58,
-		227, 37, 183, 167, 44, 219, 63, 108, 169, 126, 111, 251, 168, 17, 38, 30,
-		162, 211, 0, 24, 19, 45, 136, 77, 244, 123, 231, 181, 92, 131, 25, 73,
-		53, 152, 216, 143, 11, 21, 99, 159, 225, 40, 113, 81, 153, 242, 232, 67,
-		139, 119, 3, 98, 128, 240, 51, 201, 224, 226, 207, 26, 43, 6, 142, 79,
-		246, 76, 8, 125, 105, 196, 208, 179, 112, 228, 52, 223, 229, 130, 106, 198,
-		192, 48, 5, 14, 33, 80, 18, 57, 78, 220, 84, 120, 234, 72, 61, 46,
-		156, 212, 85, 254, 194, 215, 165, 74, 245, 47, 146, 164, 157, 59, 13, 188,
-		4, 182, 236, 15, 221, 7, 66, 134, 247, 241, 101, 160, 91, 56, 222, 205,
-		49, 186, 107, 238, 68, 138, 70, 16, 210, 83, 237, 127, 122, 202, 249, 75,
-		176, 193, 189, 174, 154, 148, 214, 218, 187, 34, 135, 255, 22, 32, 28, 88,
-		190, 117, 42, 151, 171, 60, 161, 140, 133, 175, 2, 200, 204, 118, 36, 114,
-		248, 166, 86, 158, 177, 155, 185, 115, 172, 217, 197, 69, 141, 39, 10, 129,
-		96, 199, 213, 206, 124, 93, 71, 145, 54, 137, 209, 233, 103, 64, 82, 23,
-		121, 252, 90, 41, 184, 253, 104, 150, 147, 191, 235, 65, 1, 31, 94, 163,
-		195, 116, 50, 27, 178, 180, 20, 250, 9, 62, 110, 89, 109, 144, 100, 35,
-	};
-	for (int i = 0; i < 256; i++)
-	{
-		//angle[i] = i;
-	}
-
 	while (!glfwWindowShouldClose(window))
 	{
 		//std::cout << glGetError() << std::endl;
@@ -201,8 +216,7 @@ int main(int argc, char * argv[])
 			glfwSetWindowShouldClose(window, true);
 
 		// rendering
-
-		if (iteration < 32)
+		if (iteration < ITERATION)
 		{
 			glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
@@ -216,6 +230,7 @@ int main(int argc, char * argv[])
 
 			shaderProgram.Use();
 			glUniform2f(uniform_WindowSize, windowWidth, windowHeight);
+			glUniform2f(uniform_LightPos, cursorX, cursorY);
 			int a[16] = {};
 			for (int i = 0; i < 16; i++)
 			{
@@ -241,8 +256,7 @@ int main(int argc, char * argv[])
 		glBindVertexArray(VAO);
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-		glBindVertexArray(0);
-		
+		glBindVertexArray(0);		
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();		

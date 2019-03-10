@@ -4,27 +4,29 @@
 #define SAMPLE 16
 #define ITERATION 32
 #define EPSILON 1e-6f
+#define RFR_OFFSET 1e-4
+#define RFL_OFFSET 1e-5
 #define TWO_PI 6.28318530718f
 
 in vec2 tex_coords;
 layout (location = 0) out vec4 frag_color;
-layout (location = 1) out float frag_color2;
-layout (location = 2) out float frag_color3;
 uniform vec2 viewport_size;
 
+struct light_source
+{
+	vec2 position;
+	float radius;
+	vec3 luminance;
+};
+
+uniform light_source light1;
+
 uniform uvec2 noise_size;
+uniform int iteration_count;
 
 uniform int rangle[SAMPLE];
 layout (location = 0)uniform sampler2D noise_map;
-layout (location = 1)uniform sampler2D frame;
-
-struct scene_sdf
-{
-	vec2 v2[4];
-	float a;
-	float luminance;
-	float reflectivity;
-};
+layout (location = 1)uniform sampler2D frame_canvas;
 
 struct ray
 {
@@ -34,8 +36,6 @@ struct ray
 	int depth;	
 };
 
-uniform scene_sdf static_object[];
-uniform scene_sdf dynamic_object[];
 // use stack buffer to store rays for iterations and solve ray marching without recursions
 // max buffer size equals max reflection/refraction depth
 // with RGB colored ray, need to plus 2 to buffer size to accommodate refrected rays
@@ -78,49 +78,60 @@ float cross(vec2 a, vec2 b)
 	return a.x * b.y - a.y * b.x;
 }
 
-float segment_sdf(vec2 p, vec2 a, vec2 b, out bool o)
+// o = winding order
+float segment_sdf(vec2 p, vec2 a, vec2 b, in out float o)
 {
 	vec2 v = p - a;
 	vec2 s = b - a;
 	float l = s.x * s.x + s.y * s.y;
 	float k = clamp(dot(v, s) / l, 0, 1);
-	o = cross(v, s) > 0;
+	o = min(o, sign(cross(v, s)));
 	return length(v - s * k);
 }
 
 float triangle_sdf(vec2 p, vec2 v[3])
 {
-	bool o[3];
-	float d = segment_sdf(p, v[0], v[1], o[0]);
-	d = min(d, segment_sdf(p, v[1], v[2], o[1]));
-	d = min(d, segment_sdf(p, v[2], v[0], o[2]));
-	return o[0] && o[1] && o[2] ? -d : d;
+	float o = 1;
+	float d = segment_sdf(p, v[0], v[1], o);
+	d = min(d, segment_sdf(p, v[1], v[2], o));
+	d = min(d, segment_sdf(p, v[2], v[0], o));
+	return o * -d;
 }
 
-float regular_polygon_sdf(vec2 p, vec2 c, int e, float r, float t)
+float regular_triangle_sdf(vec2 p, vec2 c, float r, float t)
 {
-	vec2 v = p - c;
-	float ia = TWO_PI / e;
-	// do not use the atan method as it significantly drops fps
-	//float k = floor((atan(v.y, v.x) - t) / ia);	
-	vec2 a = vec2(cos(t), sin(t));
-	float sign_a = cross(v, a);	
-	t -= ia;
-	vec2 b = vec2(cos(t), sin(t));
-	float sign_b = cross(v, b);
-
-	while (sign_b > 0 || sign_a < 0)
+	float ia = TWO_PI / 3;
+	vec2[3] e =
 	{
-		a = b;
-		sign_a = sign_b;
-		t -= ia;
-		b = vec2(cos(t),sin(t));
-		sign_b = cross(v, b);
-	}
+		vec2(cos(t), sin(t)),
+		vec2(cos(t - ia), sin(t - ia)),
+		vec2(cos(t + ia), sin(t + ia))
+	};
+	return triangle_sdf((p - c) / r, e) * r;
+}
 
-	bool o;
-	float d = segment_sdf(v,r * a,r * b, o);
-    return o ? -d : d;
+float regular_pentagon_sdf(vec2 p, vec2 c, float r, float t)
+{
+	vec2 v = (p - c) / r;
+	float ia = TWO_PI / 5;
+	float ia2 = ia * 2;
+
+	vec2[5] e =
+	{
+		vec2(cos(t), sin(t)),
+		vec2(cos(t - ia), sin(t - ia)),
+		vec2(cos(t - ia2), sin(t - ia2)),
+		vec2(cos(t + ia2), sin(t + ia2)),
+		vec2(cos(t + ia), sin(t + ia))
+	};
+
+	float o = 1;
+	float d = segment_sdf(v, e[0], e[1], o);
+	d = min(d, segment_sdf(v, e[1], e[2], o));
+	d = min(d, segment_sdf(v, e[2], e[3], o));
+	d = min(d, segment_sdf(v, e[3], e[4], o));
+	d = min(d, segment_sdf(v, e[4], e[0], o));
+	return o * -d * r;
 }
 
 result union_op(result a, result b)
@@ -142,29 +153,49 @@ result subtract_op(result a, result b)
 result scene(float x, float y)
 {
 	vec2 pos = vec2(x, y);
-	result a = 
+	result light = 
 	{
-	circle_sdf(pos, vec2(0.40, 0.7), 0.03),
-	vec3(10, 10,10),
-	vec3(0),
-	vec3(0),
-	vec3(0)
-	};
-	//result b = {circle_sdf(pos, vec2(1.2, 0.6), 0.05), 0};
-	result c = {
-		rectangle_sdf(pos, vec2(0.7, 0.5), vec2(0.18, 0.1), 0),
+		circle_sdf(pos,light1.position/min(viewport_size.x,viewport_size.y),light1.radius),
+		light1.luminance,
 		vec3(0),
-		vec3(0.57, 0.57,0.57),
-		vec3(2.86,2.86,2.86),
-		vec3(10,15,15)
+		vec3(0),
+		vec3(0)
 	};
-	//result c = { boxSDF(pos.x, pos.y, 0.5f, 0.5f, TWO_PI / 16.0f, 0.3f, 0.1f), 1f };
-	//result c = { regular_polygon_sdf(pos, vec2(0.9, 0.6), 5, 0.2f, 0.1),vec3(0),0.2f, 1.5,4 };
-	//result e = { regular_polygon_sdf(pos, vec2(1.0, 0.4), 3, 0.3f, 0),vec3(0),0.2f,1.5, 4 };
-	vec2 v[3] = {vec2(0.8, 0.9), vec2(1.0, 0.5), vec2(0.6, 0.5)};
-	result d = { triangle_sdf(pos, v),vec3(0), vec3(0.0,0.0,0),vec3(1.5,2.5,3.5) , vec3(4,4,1)};
-	//result d = { segment_sdf(pos, vec2(0.2, 0.2), vec2(0.4, 0.4)) - 0.1,2f };
-	return union_op(c,a);//union_op(union_op(a, c), b);//union_op(union_op(a, b), c);
+
+	result square = {
+		rectangle_sdf(pos,vec2(1.0,0.24), vec2(0.1,0.1),0.12),
+		vec3(0),
+		vec3(0.01,0.03,0.06),
+		vec3(1.3,1.31,1.33),
+		vec3(5,1,1)
+	};
+
+	result pentangon = {
+		regular_pentagon_sdf(pos,vec2(1.2,0.76),0.12f,0.7), // distance
+		vec3(0), // emissive
+		vec3(0.11,0.07,0.01), // reflective
+		vec3(1.5,1.52,1.55), // refractive
+		vec3(1,2,6) // absorption
+	};
+
+	result circle1 = {
+		circle_sdf(pos,vec2(0.41,0.69),0.12),
+		vec3(0),
+		vec3(0.08,0.22,0.07),
+		vec3(1.5,1.52,1.55),
+		vec3(1,7,3)
+	};
+
+	result circle2 = {
+		circle_sdf(pos,vec2(0.6,0.59),0.05),
+		vec3(0),
+		vec3(0.28,0.25,0.05),
+		vec3(1.49,1.50,1.56),
+		vec3(10,10,1)
+	};
+
+	//return union_op(union_op(light, circle1), circle2);
+	return union_op(union_op(union_op(union_op(light, pentangon), square), circle1), circle2);
 }
 
 vec2 normal(float x, float y)
@@ -232,7 +263,7 @@ vec3 march()
 						{
 							r.reflective[0] = fresnelSchlick(r.reflective[0], eta[0] < 1 ? cos_i : -dot(rf, n));
 							vec3 c = vec3(1 - r.reflective[0], 0, 0);							
-							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
+							ray_buffer[++k] = ray(p + rf * RFR_OFFSET, rf, ra.coefficient * c, ra.depth - 1);
 						} 
 					}
 
@@ -247,7 +278,7 @@ vec3 march()
 						{
 							r.reflective[1] = fresnelSchlick(r.reflective[1], eta[1] < 1 ? cos_i : -dot(rf, n));
 							vec3 c = vec3(0, 1 - r.reflective[1], 0);							
-							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
+							ray_buffer[++k] = ray(p + rf * RFR_OFFSET, rf, ra.coefficient * c, ra.depth - 1);
 						} 
 					}
 
@@ -262,7 +293,7 @@ vec3 march()
 						{
 							r.reflective[2] = fresnelSchlick(r.reflective[2], eta[2] < 1 ? cos_i : -dot(rf, n));
 							vec3 c = vec3(0, 0, 1 - r.reflective[2]);							
-							ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * c, ra.depth - 1);
+							ray_buffer[++k] = ray(p + rf * RFR_OFFSET, rf, ra.coefficient * c, ra.depth - 1);
 						} 
 					}
 
@@ -271,9 +302,8 @@ vec3 march()
 						vec2 rf = reflect(ra.direction, n);
 					
 						// push reflection ray to stack
-						ray_buffer[++k] = ray(p + rf * 1e-4, rf, ra.coefficient * r.reflective, ra.depth - 1);
-					}
-					
+						ray_buffer[++k] = ray(p + rf * RFL_OFFSET, rf, ra.coefficient * r.reflective, ra.depth - 1);
+					}					
 				}
 				break;
 			}			
@@ -306,6 +336,7 @@ vec3 ray_sample(vec2 pos)
 		//float angle = (i + noise);
 		//float a =  (i + texture2D(texture1, gl_FragCoord.xy / noise_size).x);
 		//float a =  2*3.1415926 *(i + o*1 + 0*  LFSR_Rand_Gen(pos)) / 64;
+
 		// push sample ray to stack for ray marching
 		ray_buffer[0] = ray(pos, vec2(cos(angle), sin(angle)), vec3(1), RAY_DEPTH);
 		emissive += march();
@@ -316,17 +347,6 @@ vec3 ray_sample(vec2 pos)
 void main()
 {
 	vec2 frag_coord = gl_FragCoord.xy / min(viewport_size.x, viewport_size.y);
-	vec3 color = ray_sample(frag_coord);
-	//float r = texture2D(texture1, TexCoord).x / 20.f;
-	//vec4 c = vec4(normal(frag_coord.x, frag_coord.y) * 0.5 + 0.5,0,1);	
-	frag_color = texture2D(frame, tex_coords) + vec4(color.xyz, 1);
-	//FragColor = texture2D(texture1, gl_FragCoord.xy / noise_size.xy).xxxx;
-//	if (trace(gl_FragCoord.xy) - vec2(600,600)) < 50)
-//	{
-//		FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);	
-//	}
-//	else
-//	{	
-//		FragColor = vec4(gl_FragCoord.xy / WindowSize.xy, 1.0f, 1.0f);//vec4(1.0f, 0.5f, 0.2f, 1.0f);	
-//	}
+	vec3 color = ray_sample(frag_coord);		
+	frag_color = texture2D(frame_canvas, tex_coords) + vec4(color.xyz, 1);
 }

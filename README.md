@@ -7,10 +7,10 @@ Thus the rendering of one result image is seperated into multiple iterations eac
 ## Techniques
 * OpenGL + GLSL
 * SDF objects
-* Reflection + Refraction + Fresnel-Schlik + Beer-Lambert
-* RGB color support
+* Reflection + Refraction + Fresnel-Schlick + Beer-Lambert
+* RGB color light support
 ## Result Demo
 Scene with one light source and multiple sdf objects
 ![Result1](https://github.com/AmaranthYan/RayMarching/blob/master/LIGHT2D_sample.png)
 
-<sup>1</sup> But not a problem for 3D scenes, while rendering 3D sdf traces only 1 ray per pixel, 2D rendering requires at least hundreds of rays (128, 256 or more) per pixel to get a good result.
+<sup>1</sup> But not a problem for 3D scenes, while rendering 3D sdf traces only 1 ray per pixel, 2D rendering requires at least hundreds of rays (128 or more) per pixel to get a good result.
